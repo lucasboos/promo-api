@@ -1,32 +1,64 @@
 package config
 
 import (
-    "log"
-    "os"
+	"fmt"
+	"log"
+	"os"
+	"sync"
 
-    "github.com/jmoiron/sqlx"
-    _ "github.com/lib/pq"
-    "github.com/joho/godotenv"
+	"github.com/jmoiron/sqlx"
+	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
 )
 
-var DB *sqlx.DB
+var (
+	dbInstance *sqlx.DB
+	once       sync.Once
+)
 
 func ConnectDB() {
-    err := godotenv.Load()
-    if err != nil {
-        log.Fatalf("Error to load .env: %v", err)
-    }
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatalf("Error loading .env file: %v", err)
+	}
 
-    connStr := "host=" + os.Getenv("DB_HOST") + 
-        " port=" + os.Getenv("DB_PORT") +
-        " user=" + os.Getenv("DB_USER") +
-        " password=" + os.Getenv("DB_PASSWORD") +
-        " dbname=" + os.Getenv("DB_NAME") +
-        " sslmode=disable"
+	connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
+		os.Getenv("DB_HOST"),
+		os.Getenv("DB_PORT"),
+		os.Getenv("DB_USER"),
+		os.Getenv("DB_PASSWORD"),
+		os.Getenv("DB_NAME"),
+	)
 
-    DB, err = sqlx.Connect("postgres", connStr)
-    if err != nil {
-        log.Fatalf("Error to connect database: %v", err)
-    }
-    log.Println("Database connected.")
+	dbInstance, err = sqlx.Connect("postgres", connStr)
+	if err != nil {
+		log.Fatalf("Error connecting to the database: %v", err)
+	}
+
+	dbInstance.SetMaxOpenConns(25)
+	dbInstance.SetMaxIdleConns(25)
+	dbInstance.SetConnMaxLifetime(5 * 60)
+
+	if err := dbInstance.Ping(); err != nil {
+		log.Fatalf("Error pinging the database: %v", err)
+	}
+
+	log.Printf("Connecting to database at %s:%s", os.Getenv("DB_HOST"), os.Getenv("DB_PORT"))
+}
+
+func GetDB() *sqlx.DB {
+	once.Do(func() {
+		ConnectDB()
+	})
+	return dbInstance
+}
+
+func CloseDB() {
+	if dbInstance != nil {
+		if err := dbInstance.Close(); err != nil {
+			log.Printf("Error closing the database: %v", err)
+		} else {
+			log.Println("Database connection closed successfully.")
+		}
+	}
 }

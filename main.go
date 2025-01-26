@@ -1,43 +1,31 @@
 package main
 
 import (
-	"net/http"
 	"log"
+	"net/http"
 
-	_ "github.com/lib/pq"
+	"github.com/gorilla/mux"
 
-	"promo-api/controllers"
-	"promo-api/repositories"
-	"promo-api/services"
 	"promo-api/config"
+	"promo-api/controllers"
+	"promo-api/middlewares"
+	"promo-api/repositories"
+	"promo-api/routes"
+	"promo-api/services"
 )
 
 func main() {
-	config.ConnectDB()
-	defer config.DB.Close()
+	db := config.GetDB()
+	defer config.CloseDB()
 
-	repo := &repositories.PromotionRepository{DB: config.DB}
+	repo := &repositories.PromotionRepository{DB: db}
 	service := &services.PromotionService{Repo: repo}
 	controller := &controllers.PromotionController{Service: service}
 
-	http.HandleFunc("/promotions", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet {
-			controller.GetAllPromotions(w, r)
-		} else {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		}
-	})
-
-	http.HandleFunc("/promotion", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost {
-			controller.CreatePromotion(w, r)
-		} else if r.Method == http.MethodGet {
-			controller.GetPromotion(w, r)
-		} else {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		}
-	})
+	r := mux.NewRouter()
+	r.Use(middlewares.ValidateContentType)
+	routes.ConfigureRoutes(r, controller)
 
 	log.Println("Server running on :8080")
-	http.ListenAndServe(":8080", nil)
+	http.ListenAndServe(":8080", r)
 }
