@@ -18,14 +18,23 @@ func main() {
 	db := config.GetDB()
 	defer config.CloseDB()
 
-	repo := &repositories.PromotionRepository{DB: db}
-	service := &services.PromotionService{Repo: repo}
-	controller := &controllers.PromotionController{Service: service}
+	companyRepo := &repositories.CompanyRepository{DB: db}
+	companyService := &services.CompanyService{Repo: companyRepo}
+	companyController := &controllers.CompanyController{Service: companyService}
+
+	promoRepo := &repositories.PromotionRepository{DB: db}
+	promoService := &services.PromotionService{Repo: promoRepo}
+	promoController := &controllers.PromotionController{Service: promoService}
 
 	r := mux.NewRouter()
 	r.Use(middlewares.ValidateContentType)
-	routes.ConfigureRoutes(r, controller)
+
+	authorized := r.PathPrefix("/").Subrouter()
+	authorized.Use(middlewares.ValidateAPIKey(companyRepo))
+
+	routes.ConfigurePromotionRoutes(authorized, promoController)
+	routes.ConfigureCompanyRoutes(authorized, companyController)
 
 	log.Println("Server running on :8080")
-	http.ListenAndServe(":8080", r)
+	log.Fatal(http.ListenAndServe(":8080", r))
 }
